@@ -36,7 +36,9 @@ const state = {
     editingVolunteerIndex: null,
     editingVolunteerId: null,
     highlightedVolunteerId: null,
-    highlightedTaskId: null
+    highlightedTaskId: null,
+    isSavingTask: false,
+    isSavingVolunteer: false
   }
 };
 
@@ -70,6 +72,23 @@ const byPriority = {
   medium: 2,
   low: 1
 };
+
+function dedupeById(items) {
+  const list = Array.isArray(items) ? items : [];
+  const seen = new Set();
+  const result = [];
+
+  list.forEach((item) => {
+    const key = item?.id || item?._id || JSON.stringify(item);
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    result.push(item);
+  });
+
+  return result;
+}
 
 const createEmptyOfflineDb = () => ({
   tasks: [],
@@ -956,8 +975,8 @@ async function refreshAll() {
     request("/emergency")
   ]);
 
-  state.tasks = Array.isArray(tasks) ? tasks : [];
-  state.volunteers = Array.isArray(volunteers) ? volunteers : [];
+  state.tasks = dedupeById(tasks);
+  state.volunteers = dedupeById(volunteers);
   state.dashboard = dashboard || state.dashboard;
   state.activity = Array.isArray(activity) ? activity : [];
   state.emergencyMode = Boolean(emergency.emergencyMode);
@@ -966,6 +985,16 @@ async function refreshAll() {
 
 async function addTask(event) {
   event.preventDefault();
+
+  if (state.ui.isSavingTask) {
+    return;
+  }
+
+  state.ui.isSavingTask = true;
+  const submitBtn = byId("taskForm")?.querySelector('button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+  }
 
   const payload = {
     title: byId("taskTitle").value.trim(),
@@ -980,18 +1009,32 @@ async function addTask(event) {
       body: JSON.stringify(payload)
     });
 
-    state.tasks.unshift(task);
     state.ui.highlightedTaskId = task.id;
     byId("taskForm").reset();
     showToast("Task created successfully.");
     await refreshAll();
   } catch (error) {
     showToast(error.message, "error");
+  } finally {
+    state.ui.isSavingTask = false;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+    }
   }
 }
 
 async function addVolunteer(event) {
   event.preventDefault();
+
+  if (state.ui.isSavingVolunteer) {
+    return;
+  }
+
+  state.ui.isSavingVolunteer = true;
+  const submitBtn = byId("volunteerForm")?.querySelector('button[type="submit"]');
+  if (submitBtn) {
+    submitBtn.disabled = true;
+  }
 
   const rawSkills = byId("volSkills").value
     .split(",")
@@ -1043,6 +1086,11 @@ async function addVolunteer(event) {
     await refreshAll();
   } catch (error) {
     showToast(error.message, "error");
+  } finally {
+    state.ui.isSavingVolunteer = false;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+    }
   }
 }
 
