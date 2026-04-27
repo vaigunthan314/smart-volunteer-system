@@ -31,7 +31,10 @@ const state = {
     taskSearch: "",
     taskFilterPriority: "all",
     taskFilterStatus: "all",
-    theme: localStorage.getItem("sevs_theme") || "aurora"
+    theme: localStorage.getItem("sevs_theme") || "aurora",
+    editingVolunteerIndex: null,
+    editingVolunteerId: null,
+    highlightedVolunteerId: null
   }
 };
 
@@ -301,9 +304,13 @@ function renderVolunteers() {
     return;
   }
 
-  state.volunteers.forEach((volunteer) => {
+  state.volunteers.forEach((volunteer, index) => {
     const card = document.createElement("div");
     card.className = "glass-card vol-card";
+
+    if (state.ui.highlightedVolunteerId && state.ui.highlightedVolunteerId === volunteer.id) {
+      card.classList.add("vol-card-updated");
+    }
 
     const skills = Array.isArray(volunteer.skills) ? volunteer.skills.join(", ") : "N/A";
 
@@ -313,10 +320,21 @@ function renderVolunteers() {
       <div><strong>Location:</strong> ${safe(volunteer.location, "N/A")}</div>
       <div><strong>Status:</strong> ${safe(volunteer.status, "available")}</div>
       <div><strong>Rating:</strong> ${safe(volunteer.rating, 1)} / 5</div>
+<div class="row">
+  <button class="action-btn-edit" onclick="editVolunteer(${index})">Edit</button>
+  <button class="action-btn-delete" onclick="deleteVolunteer(${index})">Delete</button> <!-- 🔥 ADDED -->
+</div>
     `;
 
     container.appendChild(card);
   });
+
+  if (state.ui.highlightedVolunteerId) {
+    setTimeout(() => {
+      state.ui.highlightedVolunteerId = null;
+      renderVolunteers();
+    }, 1700);
+  }
 }
 
 function renderTasks() {
@@ -335,6 +353,7 @@ function renderTasks() {
 
     const priority = String(safe(task.priority, "low")).toLowerCase();
     const status = String(safe(task.status, "pending")).toLowerCase();
+  const taskIndex = state.tasks.findIndex((entry) => entry.id === task.id);
     const assignedVolunteer = state.volunteers.find((vol) => vol.id === task.assignedVolunteerId);
 
     const assignOptions = state.volunteers.map((vol) => `<option value="${vol.id}">${vol.name} (${vol.status})</option>`).join("");
@@ -363,6 +382,7 @@ function renderTasks() {
         <button data-action="assign" data-task-id="${task.id}">Assign</button>
         <button data-action="auto-assign" data-task-id="${task.id}">Auto-Assign</button>
         <button data-action="complete" data-task-id="${task.id}">Complete</button>
+        <button class="action-btn-delete" onclick="deleteTask(${taskIndex})">Delete</button>
       </div>
       <div class="suggestions">
         <strong>Smart Suggestions (Top 3)</strong>
@@ -372,6 +392,83 @@ function renderTasks() {
 
     container.appendChild(card);
   });
+}
+
+async function deleteTask(index) {
+  const task = state.tasks[index];
+  if (!task) {
+    return;
+  }
+
+  const confirmed = window.confirm(`Delete task \"${task.title}\"?`);
+  if (!confirmed) {
+    return;
+  }
+
+  const [removed] = state.tasks.splice(index, 1);
+  renderTasks();
+
+  try {
+    await request(`/tasks/${removed.id}`, { method: "DELETE" });
+    showToast("Task deleted.");
+    await refreshAll();
+  } catch (error) {
+    state.tasks.splice(index, 0, removed);
+    renderTasks();
+    showToast(error.message, "error");
+  }
+}
+
+function editVolunteer(index) {
+  const volunteer = state.volunteers[index];
+  if (!volunteer) {
+    return;
+  }
+
+  state.ui.editingVolunteerIndex = index;
+  state.ui.editingVolunteerId = volunteer.id;
+
+  byId("volName").value = safe(volunteer.name, "");
+  byId("volSkills").value = Array.isArray(volunteer.skills) ? volunteer.skills.join(", ") : "";
+  byId("volLocation").value = safe(volunteer.location, "");
+  byId("volRating").value = safe(volunteer.rating, "");
+
+  const submitButton = byId("volunteerForm").querySelector('button[type="submit"]');
+  if (submitButton) {
+    submitButton.textContent = "Update Volunteer";
+  }
+}
+
+async function deleteVolunteer(index) {
+  const volunteer = state.volunteers[index];
+  if (!volunteer) return;
+
+  const confirmDelete = window.confirm(`Delete volunteer "${volunteer.name}"?`);
+  if (!confirmDelete) return;
+
+  const removed = state.volunteers.splice(index, 1)[0];
+  renderVolunteers();
+
+  try {
+    await request(`/volunteers/${removed.id}`, { method: "DELETE" });
+    showToast("Volunteer deleted.");
+    await refreshAll();
+  } catch (error) {
+    state.volunteers.splice(index, 0, removed);
+    renderVolunteers();
+    showToast(error.message, "error");
+  }
+}
+
+function resetVolunteerFormMode() {
+  state.ui.editingVolunteerIndex = null;
+  state.ui.editingVolunteerId = null;
+
+  const form = byId("volunteerForm");
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) {
+    submitButton.textContent = "Add Volunteer";
+  }
 }
 
 function renderActivity() {
@@ -500,15 +597,41 @@ async function addVolunteer(event) {
     rating: Number(byId("volRating").value)
   };
 
-  try {
-    const volunteer = await request("/volunteers", {
-      method: "POST",
-      body: JSON.stringify(payload)
-    });
+  const editingIndex = state.ui.editingVolunteerIndex;
 
-    state.volunteers.unshift(volunteer);
+  try {
+    if (editingIndex !== null && editingIndex >= 0 && editingIndex < state.volunteers.length) {
+      const original = state.volunteers[editingIndex];
+      const updatedLocal = {
+        ...original,
+        ...payload,
+        id: state.ui.editingVolunteerId || original.id
+      };
+
+      state.volunteers.splice(editingIndex, 1, updatedLocal);
+      state.ui.highlightedVolunteerId = updatedLocal.id;
+      renderVolunteers();
+
+      const updatedVolunteer = await request(`/volunteers/${updatedLocal.id}`, {
+        method: "PUT",
+        body: JSON.stringify(payload)
+      });
+
+      state.volunteers.splice(editingIndex, 1, updatedVolunteer);
+      state.ui.highlightedVolunteerId = updatedVolunteer.id;
+      showToast("Volunteer updated successfully.");
+    } else {
+      const volunteer = await request("/volunteers", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+
+      state.volunteers.unshift(volunteer);
+      showToast("Volunteer onboarded successfully.");
+    }
+
     byId("volunteerForm").reset();
-    showToast("Volunteer onboarded successfully.");
+    resetVolunteerFormMode();
     await refreshAll();
   } catch (error) {
     showToast(error.message, "error");

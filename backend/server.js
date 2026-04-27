@@ -323,6 +323,29 @@ app.post("/api/tasks/:taskId/complete", (req, res) => {
   return res.json({ message: "Task marked as completed.", task: sanitizeTask(task) });
 });
 
+app.delete("/api/tasks/:taskId", (req, res) => {
+  const taskIndex = tasks.findIndex((entry) => entry.id === req.params.taskId);
+  if (taskIndex === -1) {
+    return res.status(404).json({ message: "Task not found." });
+  }
+
+  const [deletedTask] = tasks.splice(taskIndex, 1);
+
+  if (deletedTask.assignedVolunteerId) {
+    const assignedVolunteer = volunteers.find((entry) => entry.id === deletedTask.assignedVolunteerId);
+    if (assignedVolunteer) {
+      assignedVolunteer.activeTaskIds = (assignedVolunteer.activeTaskIds || []).filter((taskId) => taskId !== deletedTask.id);
+      if (assignedVolunteer.activeTaskIds.length === 0) {
+        assignedVolunteer.status = "available";
+      }
+      assignedVolunteer.updatedAt = nowIso();
+    }
+  }
+
+  logActivity("TASK_DELETED", `Task \"${deletedTask.title}\" deleted.`, { taskId: deletedTask.id });
+  return res.json({ message: "Task deleted successfully." });
+});
+
 app.delete("/api/tasks/completed", (_, res) => {
   const before = tasks.length;
   tasks = tasks.filter((task) => task.status !== "completed");
@@ -380,6 +403,43 @@ app.post("/api/volunteers", (req, res) => {
   });
 
   return res.status(201).json(sanitizeVolunteer(volunteer));
+});
+
+app.put("/api/volunteers/:volunteerId", (req, res) => {
+  const volunteer = volunteers.find((entry) => entry.id === req.params.volunteerId);
+  if (!volunteer) {
+    return res.status(404).json({ message: "Volunteer not found." });
+  }
+
+  const name = normalizeString(req.body.name);
+  const skills = normalizeSkills(req.body.skills);
+  const location = normalizeLocation(req.body.location);
+  const rating = Number(req.body.rating);
+
+  if (!isValidName(name)) {
+    return res.status(400).json({ message: "Name must contain alphabets and spaces only." });
+  }
+
+  if (skills.length === 0) {
+    return res.status(400).json({ message: "At least one skill is required." });
+  }
+
+  if (!location) {
+    return res.status(400).json({ message: "Location must be a real city name." });
+  }
+
+  if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+    return res.status(400).json({ message: "Rating must be between 1 and 5." });
+  }
+
+  volunteer.name = name;
+  volunteer.skills = skills;
+  volunteer.location = location;
+  volunteer.rating = rating;
+  volunteer.updatedAt = nowIso();
+
+  logActivity("VOLUNTEER_UPDATED", `Volunteer ${volunteer.name} updated.`, { volunteerId: volunteer.id });
+  return res.json(sanitizeVolunteer(volunteer));
 });
 
 app.post("/api/match", (req, res) => {
