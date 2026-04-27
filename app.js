@@ -90,6 +90,37 @@ function dedupeById(items) {
   return result;
 }
 
+function buildVolunteerSignature(volunteer) {
+  const skills = Array.isArray(volunteer?.skills)
+    ? volunteer.skills.map((entry) => String(entry).trim().toLowerCase()).sort().join("|")
+    : "";
+
+  return [
+    String(volunteer?.name || "").trim().toLowerCase(),
+    String(volunteer?.location || "").trim().toLowerCase(),
+    skills,
+    String(volunteer?.rating ?? ""),
+    String(volunteer?.status || "").trim().toLowerCase()
+  ].join("::");
+}
+
+function dedupeVolunteers(items) {
+  const byId = dedupeById(items);
+  const seen = new Set();
+  const result = [];
+
+  byId.forEach((volunteer) => {
+    const signature = buildVolunteerSignature(volunteer);
+    if (seen.has(signature)) {
+      return;
+    }
+    seen.add(signature);
+    result.push(volunteer);
+  });
+
+  return result;
+}
+
 const createEmptyOfflineDb = () => ({
   tasks: [],
   volunteers: [],
@@ -976,7 +1007,7 @@ async function refreshAll() {
   ]);
 
   state.tasks = dedupeById(tasks);
-  state.volunteers = dedupeById(volunteers);
+  state.volunteers = dedupeVolunteers(volunteers);
   state.dashboard = dashboard || state.dashboard;
   state.activity = Array.isArray(activity) ? activity : [];
   state.emergencyMode = Boolean(emergency.emergencyMode);
