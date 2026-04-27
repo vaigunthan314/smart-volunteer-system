@@ -6,6 +6,8 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const ROOT_DIR = path.join(__dirname, "..");
+
 const PORT = Number(process.env.PORT || 5001);
 
 const CITY_NAMES = [
@@ -172,7 +174,7 @@ const completeTask = (task) => {
   logActivity("TASK_COMPLETED", `Task \"${task.title}\" marked as completed.`, { taskId: task.id });
 };
 
-app.use(express.static(path.join(__dirname, "..", "frontend")));
+app.use(express.static(ROOT_DIR));
 
 app.get("/api/health", (_, res) => {
   return res.json({
@@ -442,6 +444,34 @@ app.put("/api/volunteers/:volunteerId", (req, res) => {
   return res.json(sanitizeVolunteer(volunteer));
 });
 
+app.delete("/api/volunteers/:volunteerId", (req, res) => {
+  const volunteerIndex = volunteers.findIndex((entry) => entry.id === req.params.volunteerId);
+  if (volunteerIndex === -1) {
+    return res.status(404).json({ message: "Volunteer not found." });
+  }
+
+  const [deletedVolunteer] = volunteers.splice(volunteerIndex, 1);
+
+  tasks = tasks.map((task) => {
+    if (task.assignedVolunteerId !== deletedVolunteer.id) {
+      return task;
+    }
+
+    return {
+      ...task,
+      status: task.status === "completed" ? task.status : "pending",
+      assignedVolunteerId: null,
+      updatedAt: nowIso()
+    };
+  });
+
+  logActivity("VOLUNTEER_DELETED", `Volunteer ${deletedVolunteer.name} deleted.`, {
+    volunteerId: deletedVolunteer.id
+  });
+
+  return res.json({ message: "Volunteer deleted successfully." });
+});
+
 app.post("/api/match", (req, res) => {
   const task = tasks.find((entry) => entry.id === req.body.taskId);
   if (!task) {
@@ -548,7 +578,7 @@ app.post("/api/emergency/toggle", (_, res) => {
 });
 
 app.get(/.*/, (_, res) => {
-  res.sendFile(path.join(__dirname, "..", "frontend", "index.html"));
+  res.sendFile(path.join(ROOT_DIR, "index.html"));
 });
 
 app.listen(PORT, () => {

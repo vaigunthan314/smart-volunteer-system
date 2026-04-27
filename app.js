@@ -419,6 +419,36 @@ async function deleteTask(index) {
   }
 }
 
+async function deleteVolunteer(index) {
+  const volunteer = state.volunteers[index];
+  if (!volunteer) {
+    return;
+  }
+
+  const confirmed = window.confirm(`Delete volunteer \"${volunteer.name}\"?`);
+  if (!confirmed) {
+    return;
+  }
+
+  const [removed] = state.volunteers.splice(index, 1);
+  renderVolunteers();
+
+  if (state.ui.editingVolunteerId === removed.id) {
+    byId("volunteerForm").reset();
+    resetVolunteerFormMode();
+  }
+
+  try {
+    await request(`/volunteers/${removed.id}`, { method: "DELETE" });
+    showToast("Volunteer deleted.");
+    await refreshAll();
+  } catch (error) {
+    state.volunteers.splice(index, 0, removed);
+    renderVolunteers();
+    showToast(error.message, "error");
+  }
+}
+
 function editVolunteer(index) {
   const volunteer = state.volunteers[index];
   if (!volunteer) {
@@ -436,27 +466,6 @@ function editVolunteer(index) {
   const submitButton = byId("volunteerForm").querySelector('button[type="submit"]');
   if (submitButton) {
     submitButton.textContent = "Update Volunteer";
-  }
-}
-
-async function deleteVolunteer(index) {
-  const volunteer = state.volunteers[index];
-  if (!volunteer) return;
-
-  const confirmDelete = window.confirm(`Delete volunteer "${volunteer.name}"?`);
-  if (!confirmDelete) return;
-
-  const removed = state.volunteers.splice(index, 1)[0];
-  renderVolunteers();
-
-  try {
-    await request(`/volunteers/${removed.id}`, { method: "DELETE" });
-    showToast("Volunteer deleted.");
-    await refreshAll();
-  } catch (error) {
-    state.volunteers.splice(index, 0, removed);
-    renderVolunteers();
-    showToast(error.message, "error");
   }
 }
 
