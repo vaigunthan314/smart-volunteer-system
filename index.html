@@ -3,85 +3,62 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Smart Emergency Volunteer Coordination System</title>
+  <title>Smart Emergency Volunteer System</title>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="styles.css">
 
   <!-- Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
-
-  <!-- ✅ CSS MUST BE HERE -->
-  <link rel="stylesheet" href="./styles.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet"/>
 </head>
 
 <body>
 
-  <!-- ================= INTRO ================= -->
+  <!-- INTRO -->
   <div id="introScreen" class="intro-screen">
-    <div class="intro-card">
-      <div class="intro-badge">Emergency AI Suite</div>
-      <h1>Smart Emergency Volunteer Coordination System</h1>
-      <p>Coordinating life-saving responses with intelligent matching and real-time command control.</p>
-      <button id="enterAppBtn">Enter Mission Control</button>
-    </div>
+    <h1>🚨 Smart Emergency Volunteer System</h1>
+    <button id="enterAppBtn">Enter</button>
   </div>
 
-  <!-- ================= BACKGROUND ================= -->
-  <div id="characterLayer"></div>
-  <canvas id="particles"></canvas>
-  <div id="emergencyOverlay"></div>
-  <div id="emergencyBanner" class="emergency-banner">
-    🚨 EMERGENCY MODE ACTIVE — HIGH PRIORITY TASKS BOOSTED
-  </div>
-
-  <!-- ================= APP ================= -->
+  <!-- APP -->
   <div class="app-shell">
 
-    <!-- ===== SIDEBAR ===== -->
+    <!-- SIDEBAR -->
     <aside class="sidebar">
-      <h1 class="brand">⚡ Smart Emergency<br/>Volunteer System</h1>
+      <h2>⚡ Smart System</h2>
 
-      <div class="nav-list">
-        <button class="nav-btn active" data-target="dashboardSection">Dashboard</button>
-        <button class="nav-btn" data-target="tasksSection">Task Management</button>
-        <button class="nav-btn" data-target="volunteersSection">Volunteer Management</button>
-        <button class="nav-btn" data-target="aiSection">AI Engine</button>
-        <button class="nav-btn" data-target="activitySection">Activity Log</button>
-      </div>
+      <button class="nav-btn" onclick="showSection('dashboardSection')">Dashboard</button>
+      <button class="nav-btn" onclick="showSection('tasksSection')">Tasks</button>
+      <button class="nav-btn" onclick="showSection('volunteersSection')">Volunteers</button>
+      <button class="nav-btn" onclick="showSection('aiSection')">AI Engine</button>
 
-      <div class="side-actions">
-        <button id="toggleEmergencyBtn">🚨 Toggle Emergency</button>
-        <div>Emergency: <strong id="emergencyStatus">OFF</strong></div>
-        <select id="themeSelect">
-          <option value="aurora">Aurora</option>
-          <option value="sunset">Sunset</option>
-          <option value="emerald">Emerald</option>
-        </select>
-      </div>
+      <button id="toggleEmergencyBtn">🚨 Emergency</button>
+      <p>Status: <span id="emergencyStatus">OFF</span></p>
     </aside>
 
-    <!-- ===== MAIN ===== -->
+    <!-- MAIN -->
     <main class="main">
 
       <!-- DASHBOARD -->
-      <section id="dashboardSection" class="section-panel active">
+      <section id="dashboardSection" class="section-panel">
         <h2>Dashboard</h2>
-        <div id="metricTotalTasks">0</div>
-        <div id="metricCompleted">0</div>
-        <div id="metricVolunteers">0</div>
-        <div id="metricEfficiency">0%</div>
+        <p>Total Tasks: <span id="metricTotalTasks">0</span></p>
+        <p>Completed: <span id="metricCompleted">0</span></p>
+        <p>Volunteers: <span id="metricVolunteers">0</span></p>
       </section>
 
       <!-- TASKS -->
       <section id="tasksSection" class="section-panel">
         <h2>Add Task</h2>
+
         <form id="taskForm">
-          <input id="taskTitle" placeholder="Task title" required />
-          <input id="taskSkill" placeholder="Skill" required />
-          <input id="taskLocation" placeholder="Location" required />
+          <input id="taskTitle" placeholder="Task Title" required>
+          <input id="taskSkill" placeholder="Skill" required>
+          <input id="taskLocation" placeholder="Location" required>
           <select id="taskPriority">
             <option value="low">Low</option>
-            <option value="medium">Medium</option>
             <option value="high">High</option>
           </select>
           <button type="submit">Add Task</button>
@@ -93,11 +70,11 @@
       <!-- VOLUNTEERS -->
       <section id="volunteersSection" class="section-panel">
         <h2>Add Volunteer</h2>
+
         <form id="volunteerForm">
-          <input id="volName" placeholder="Name" required />
-          <input id="volSkills" placeholder="Skills" required />
-          <input id="volLocation" placeholder="Location" required />
-          <input id="volRating" type="number" min="1" max="5" required />
+          <input id="volName" placeholder="Name" required>
+          <input id="volSkills" placeholder="Skills" required>
+          <input id="volLocation" placeholder="Location" required>
           <button type="submit">Add</button>
         </form>
 
@@ -112,18 +89,10 @@
         <div id="aiResult"></div>
       </section>
 
-      <!-- ACTIVITY -->
-      <section id="activitySection" class="section-panel">
-        <h2>Activity Log</h2>
-        <div id="activityList"></div>
-      </section>
-
-      <div id="toast"></div>
-
     </main>
   </div>
 
-  <!-- ✅ JS MUST BE LAST -->
+  <!-- JS -->
   <script src="app.js"></script>
 
 </body>
