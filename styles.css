@@ -402,6 +402,11 @@ select {
   border-color: rgba(85, 242, 157, 0.9);
 }
 
+.task-card-added {
+  animation: addedPulse 1.2s ease;
+  border-color: rgba(109, 229, 255, 0.9);
+}
+
 @keyframes updatedPulse {
   0% {
     box-shadow: 0 0 0 rgba(85, 242, 157, 0.2);
@@ -411,6 +416,21 @@ select {
   }
   100% {
     box-shadow: 0 0 0 rgba(85, 242, 157, 0.2);
+  }
+}
+
+@keyframes addedPulse {
+  0% {
+    transform: translateY(0);
+    box-shadow: 0 0 0 rgba(109, 229, 255, 0.2);
+  }
+  45% {
+    transform: translateY(-2px);
+    box-shadow: 0 0 24px rgba(109, 229, 255, 0.45);
+  }
+  100% {
+    transform: translateY(0);
+    box-shadow: 0 0 0 rgba(109, 229, 255, 0.2);
   }
 }
 
@@ -457,6 +477,32 @@ select {
   animation: aiPulse 1s infinite;
 }
 
+.ai-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-top-color: rgba(109, 229, 255, 0.95);
+  animation: spin 0.8s linear infinite;
+}
+
+.score-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  background: linear-gradient(120deg, rgba(85, 242, 157, 0.22), rgba(109, 229, 255, 0.22));
+  border: 1px solid rgba(109, 229, 255, 0.46);
+}
+
 @keyframes aiPulse {
   0% {
     box-shadow: 0 0 0 rgba(109, 229, 255, 0.3);
@@ -484,12 +530,34 @@ select {
   animation: emergencyFlash 0.55s infinite alternate;
 }
 
+body.emergency-pulse {
+  animation: emergencyBodyPulse 0.45s infinite alternate;
+}
+
 @keyframes emergencyFlash {
   from {
     background: rgba(255, 0, 0, 0.15);
   }
   to {
     background: rgba(255, 0, 0, 0.42);
+  }
+}
+
+@keyframes emergencyBodyPulse {
+  from {
+    filter: saturate(1);
+  }
+  to {
+    filter: saturate(1.35);
+  }
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 

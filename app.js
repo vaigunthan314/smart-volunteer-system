@@ -27,6 +27,7 @@ const state = {
   emergencyMode: false,
   aiSelectionTaskId: "",
   apiBase: API_CANDIDATES[0],
+  offlineMode: false,
   ui: {
     taskSearch: "",
     taskFilterPriority: "all",
@@ -34,7 +35,8 @@ const state = {
     theme: localStorage.getItem("sevs_theme") || "aurora",
     editingVolunteerIndex: null,
     editingVolunteerId: null,
-    highlightedVolunteerId: null
+    highlightedVolunteerId: null,
+    highlightedTaskId: null
   }
 };
 
@@ -42,7 +44,16 @@ let sirenTimer = null;
 let audioCtx = null;
 let sirenStopTimeout = null;
 let emergencyPulseTimeout = null;
-const EMERGENCY_PULSE_MS = 2500;
+const EMERGENCY_PULSE_MS = 4000;
+
+const OFFLINE_DB_KEY = "sevs_offline_db_v1";
+const metricCache = {
+  totalTasks: 0,
+  completedTasks: 0,
+  volunteersCount: 0,
+  efficiency: 0,
+  highPriorityCount: 0
+};
 
 const byId = (id) => document.getElementById(id);
 const safe = (value, fallback = "") => (value === undefined || value === null ? fallback : value);
@@ -59,6 +70,345 @@ const byPriority = {
   medium: 2,
   low: 1
 };
+
+const createEmptyOfflineDb = () => ({
+  tasks: [],
+  volunteers: [],
+  activity: [],
+  emergencyMode: false
+});
+
+const readOfflineDb = () => {
+  try {
+    const raw = localStorage.getItem(OFFLINE_DB_KEY);
+    if (!raw) return createEmptyOfflineDb();
+    const parsed = JSON.parse(raw);
+    return {
+      tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+      volunteers: Array.isArray(parsed.volunteers) ? parsed.volunteers : [],
+      activity: Array.isArray(parsed.activity) ? parsed.activity : [],
+      emergencyMode: Boolean(parsed.emergencyMode)
+    };
+  } catch {
+    return createEmptyOfflineDb();
+  }
+};
+
+let offlineDb = readOfflineDb();
+
+const persistOfflineDb = () => {
+  localStorage.setItem(OFFLINE_DB_KEY, JSON.stringify(offlineDb));
+};
+
+const offlineNowIso = () => new Date().toISOString();
+const offlineId = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+const getOfflineDashboard = () => {
+  const totalTasks = offlineDb.tasks.length;
+  const completedTasks = offlineDb.tasks.filter((task) => task.status === "completed").length;
+  const highPriorityCount = offlineDb.tasks.filter((task) => task.priority === "high").length;
+  const volunteersCount = offlineDb.volunteers.length;
+
+  return {
+    totalTasks,
+    completedTasks,
+    volunteersCount,
+    efficiency: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0,
+    highPriorityCount,
+    emergencyMode: offlineDb.emergencyMode
+  };
+};
+
+const appendOfflineActivity = (type, message, meta = {}) => {
+  offlineDb.activity.unshift({
+    id: offlineId("log"),
+    type,
+    message,
+    timestamp: offlineNowIso(),
+    meta
+  });
+  if (offlineDb.activity.length > 250) {
+    offlineDb.activity = offlineDb.activity.slice(0, 250);
+  }
+};
+
+const computeOfflineMatches = (task) => {
+  const taskSkill = String(task.skill || "").toLowerCase();
+  const sorted = offlineDb.volunteers
+    .map((volunteer) => {
+      let score = 0;
+      const reasoning = [];
+      const skills = Array.isArray(volunteer.skills) ? volunteer.skills.map((item) => String(item).toLowerCase()) : [];
+
+      if (skills.includes(taskSkill)) {
+        score += 50;
+        reasoning.push("Skill match (+50)");
+      }
+      if (volunteer.location === task.location) {
+        score += 20;
+        reasoning.push("Same location (+20)");
+      }
+      if (volunteer.status === "available") {
+        score += 20;
+        reasoning.push("Availability (+20)");
+      }
+      score += Number(volunteer.rating || 0);
+      reasoning.push(`Rating (+${Number(volunteer.rating || 0)})`);
+      if (offlineDb.emergencyMode && task.priority === "high") {
+        score += 30;
+        reasoning.push("Emergency priority boost (+30)");
+      }
+
+      return { volunteer, score, reasoning };
+    })
+    .sort((a, b) => b.score - a.score || a.volunteer.name.localeCompare(b.volunteer.name));
+
+  return {
+    best: sorted[0] || null,
+    top3: sorted.slice(0, 3)
+  };
+};
+
+async function localApiRequest(path, options = {}) {
+  const method = (options.method || "GET").toUpperCase();
+  const body = options.body ? JSON.parse(options.body) : {};
+  const url = new URL(path, "http://offline.local");
+  const pathname = url.pathname;
+  const parts = pathname.split("/").filter(Boolean);
+
+  if (pathname === "/tasks" && method === "GET") return offlineDb.tasks;
+  if (pathname === "/volunteers" && method === "GET") return offlineDb.volunteers;
+  if (pathname === "/dashboard" && method === "GET") return getOfflineDashboard();
+  if (pathname === "/activity" && method === "GET") {
+    const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 24)));
+    return offlineDb.activity.slice(0, limit);
+  }
+  if (pathname === "/emergency" && method === "GET") return { emergencyMode: offlineDb.emergencyMode };
+  if (pathname === "/export" && method === "GET") {
+    return {
+      exportedAt: offlineNowIso(),
+      emergencyMode: offlineDb.emergencyMode,
+      dashboard: getOfflineDashboard(),
+      tasks: offlineDb.tasks,
+      volunteers: offlineDb.volunteers,
+      activity: offlineDb.activity
+    };
+  }
+
+  if (pathname === "/tasks" && method === "POST") {
+    const title = String(body.title || "").trim();
+    const skill = String(body.skill || "").trim();
+    const location = String(body.location || "").trim();
+    const priority = String(body.priority || "low").toLowerCase();
+    if (!title || !skill || !location || !["low", "medium", "high"].includes(priority)) {
+      throw new Error("Valid title, skill, location and priority are required.");
+    }
+
+    const task = {
+      id: offlineId("task"),
+      title,
+      skill,
+      location,
+      priority,
+      status: "pending",
+      assignedVolunteerId: null,
+      createdAt: offlineNowIso(),
+      updatedAt: offlineNowIso()
+    };
+    offlineDb.tasks.unshift(task);
+    appendOfflineActivity("TASK_ADDED", `Task \"${task.title}\" created.`, { taskId: task.id });
+    persistOfflineDb();
+    return task;
+  }
+
+  if (pathname === "/volunteers" && method === "POST") {
+    const name = String(body.name || "").trim();
+    const skills = Array.isArray(body.skills) ? body.skills.map((item) => String(item).trim()).filter(Boolean) : [];
+    const location = String(body.location || "").trim();
+    const rating = Number(body.rating);
+
+    if (!name || !/^[A-Za-z ]+$/.test(name)) throw new Error("Name must contain alphabets and spaces only.");
+    if (skills.length === 0) throw new Error("At least one skill is required.");
+    if (!location) throw new Error("Location is required.");
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) throw new Error("Rating must be between 1 and 5.");
+
+    const volunteer = {
+      id: offlineId("vol"),
+      name,
+      skills,
+      location,
+      status: "available",
+      rating,
+      activeTaskIds: [],
+      createdAt: offlineNowIso(),
+      updatedAt: offlineNowIso()
+    };
+    offlineDb.volunteers.unshift(volunteer);
+    appendOfflineActivity("VOLUNTEER_ADDED", `Volunteer ${volunteer.name} added.`, { volunteerId: volunteer.id });
+    persistOfflineDb();
+    return volunteer;
+  }
+
+  if (parts[0] === "volunteers" && parts[1] && method === "PUT") {
+    const volunteer = offlineDb.volunteers.find((entry) => entry.id === parts[1]);
+    if (!volunteer) throw new Error("Volunteer not found.");
+
+    const name = String(body.name || "").trim();
+    const skills = Array.isArray(body.skills) ? body.skills.map((item) => String(item).trim()).filter(Boolean) : [];
+    const location = String(body.location || "").trim();
+    const rating = Number(body.rating);
+
+    if (!name || !/^[A-Za-z ]+$/.test(name)) throw new Error("Name must contain alphabets and spaces only.");
+    if (skills.length === 0) throw new Error("At least one skill is required.");
+    if (!location) throw new Error("Location is required.");
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) throw new Error("Rating must be between 1 and 5.");
+
+    volunteer.name = name;
+    volunteer.skills = skills;
+    volunteer.location = location;
+    volunteer.rating = rating;
+    volunteer.updatedAt = offlineNowIso();
+    persistOfflineDb();
+    return volunteer;
+  }
+
+  if (parts[0] === "volunteers" && parts[1] && method === "DELETE") {
+    const volunteerIndex = offlineDb.volunteers.findIndex((entry) => entry.id === parts[1]);
+    if (volunteerIndex < 0) throw new Error("Volunteer not found.");
+    const [removedVolunteer] = offlineDb.volunteers.splice(volunteerIndex, 1);
+
+    offlineDb.tasks = offlineDb.tasks.map((task) =>
+      task.assignedVolunteerId === removedVolunteer.id
+        ? { ...task, assignedVolunteerId: null, status: task.status === "completed" ? "completed" : "pending", updatedAt: offlineNowIso() }
+        : task
+    );
+
+    appendOfflineActivity("VOLUNTEER_DELETED", `Volunteer ${removedVolunteer.name} deleted.`, {
+      volunteerId: removedVolunteer.id
+    });
+    persistOfflineDb();
+    return { message: "Volunteer deleted." };
+  }
+
+  if (parts[0] === "tasks" && parts[1] && method === "DELETE") {
+    const taskIndex = offlineDb.tasks.findIndex((entry) => entry.id === parts[1]);
+    if (taskIndex < 0) throw new Error("Task not found.");
+    const [removedTask] = offlineDb.tasks.splice(taskIndex, 1);
+    appendOfflineActivity("TASK_DELETED", `Task \"${removedTask.title}\" deleted.`, { taskId: removedTask.id });
+    persistOfflineDb();
+    return { message: "Task deleted." };
+  }
+
+  if (parts[0] === "tasks" && parts[1] && parts[2] === "assign" && method === "POST") {
+    const task = offlineDb.tasks.find((entry) => entry.id === parts[1]);
+    const volunteer = offlineDb.volunteers.find((entry) => entry.id === body.volunteerId);
+    if (!task) throw new Error("Task not found.");
+    if (!volunteer) throw new Error("Volunteer not found.");
+
+    task.status = "assigned";
+    task.assignedVolunteerId = volunteer.id;
+    task.updatedAt = offlineNowIso();
+    volunteer.status = "busy";
+    volunteer.activeTaskIds = [...new Set([...(volunteer.activeTaskIds || []), task.id])];
+    volunteer.updatedAt = offlineNowIso();
+    persistOfflineDb();
+    return { message: "Task assigned.", task };
+  }
+
+  if (parts[0] === "tasks" && parts[1] && parts[2] === "auto-assign" && method === "POST") {
+    const task = offlineDb.tasks.find((entry) => entry.id === parts[1]);
+    if (!task) throw new Error("Task not found.");
+    const { best } = computeOfflineMatches(task);
+    if (!best) throw new Error("No volunteers available for matching.");
+
+    task.status = "assigned";
+    task.assignedVolunteerId = best.volunteer.id;
+    task.updatedAt = offlineNowIso();
+    best.volunteer.status = "busy";
+    best.volunteer.activeTaskIds = [...new Set([...(best.volunteer.activeTaskIds || []), task.id])];
+    best.volunteer.updatedAt = offlineNowIso();
+    persistOfflineDb();
+
+    return {
+      message: "Task auto-assigned.",
+      task,
+      assignedVolunteer: best.volunteer,
+      aiScore: best.score,
+      reasoning: best.reasoning
+    };
+  }
+
+  if (parts[0] === "tasks" && parts[1] && parts[2] === "complete" && method === "POST") {
+    const task = offlineDb.tasks.find((entry) => entry.id === parts[1]);
+    if (!task) throw new Error("Task not found.");
+    task.status = "completed";
+    task.updatedAt = offlineNowIso();
+    persistOfflineDb();
+    return { message: "Task completed.", task };
+  }
+
+  if (pathname === "/tasks/auto-assign-pending" && method === "POST") {
+    const pending = offlineDb.tasks.filter((task) => task.status === "pending");
+    let assignedCount = 0;
+    const results = [];
+
+    pending.forEach((task) => {
+      const { best } = computeOfflineMatches(task);
+      if (!best) return;
+      task.status = "assigned";
+      task.assignedVolunteerId = best.volunteer.id;
+      task.updatedAt = offlineNowIso();
+      best.volunteer.status = "busy";
+      best.volunteer.activeTaskIds = [...new Set([...(best.volunteer.activeTaskIds || []), task.id])];
+      best.volunteer.updatedAt = offlineNowIso();
+      assignedCount += 1;
+      results.push({ taskId: task.id, taskTitle: task.title, volunteerId: best.volunteer.id, volunteerName: best.volunteer.name, aiScore: best.score });
+    });
+
+    appendOfflineActivity("BULK_AUTO_ASSIGN", `Bulk auto-assigned ${assignedCount} tasks.`, { assignedCount });
+    persistOfflineDb();
+    return { assignedCount, attempted: pending.length, results };
+  }
+
+  if (pathname === "/tasks/completed" && method === "DELETE") {
+    const before = offlineDb.tasks.length;
+    offlineDb.tasks = offlineDb.tasks.filter((task) => task.status !== "completed");
+    const removed = before - offlineDb.tasks.length;
+    appendOfflineActivity("CLEAR_COMPLETED", `Cleared ${removed} completed tasks.`, { removed });
+    persistOfflineDb();
+    return { removed, remaining: offlineDb.tasks.length };
+  }
+
+  if (pathname === "/match" && method === "POST") {
+    const task = offlineDb.tasks.find((entry) => entry.id === body.taskId);
+    if (!task) throw new Error("Task not found.");
+    const { best, top3 } = computeOfflineMatches(task);
+    if (!best) {
+      return {
+        task,
+        bestVolunteer: null,
+        bestScore: 0,
+        detailedReasoning: ["No volunteers are currently registered."],
+        topMatches: []
+      };
+    }
+    return {
+      task,
+      bestVolunteer: best.volunteer,
+      bestScore: best.score,
+      detailedReasoning: best.reasoning,
+      topMatches: top3.map((entry) => ({ volunteer: entry.volunteer, score: entry.score, reasoning: entry.reasoning }))
+    };
+  }
+
+  if (pathname === "/emergency/toggle" && method === "POST") {
+    offlineDb.emergencyMode = !offlineDb.emergencyMode;
+    persistOfflineDb();
+    return { emergencyMode: offlineDb.emergencyMode };
+  }
+
+  throw new Error(`Offline route not implemented: ${method} ${pathname}`);
+}
 
 function showToast(message, tone = "info") {
   const toast = byId("toast");
@@ -135,6 +485,7 @@ async function request(path, options = {}) {
       }
 
       state.apiBase = base;
+  state.offlineMode = false;
       return payload;
     } catch (error) {
       lastError = error;
@@ -147,7 +498,8 @@ async function request(path, options = {}) {
     }
   }
 
-  throw lastError || new Error("Unable to connect to backend API. Start server on port 5001.");
+  state.offlineMode = true;
+  return localApiRequest(path, options);
 }
 
 async function discoverApi() {
@@ -158,12 +510,15 @@ async function discoverApi() {
       const payload = await response.json();
       if (payload.ok) {
         state.apiBase = base;
+        state.offlineMode = false;
         return;
       }
     } catch {
       // keep checking next candidate
     }
   }
+
+  state.offlineMode = true;
 }
 
 function switchSection(sectionId) {
@@ -268,11 +623,43 @@ function getFilteredTasks() {
 }
 
 function renderDashboard() {
-  byId("metricTotalTasks").textContent = safe(state.dashboard.totalTasks, 0);
-  byId("metricCompleted").textContent = safe(state.dashboard.completedTasks, 0);
-  byId("metricVolunteers").textContent = safe(state.dashboard.volunteersCount, 0);
-  byId("metricEfficiency").textContent = `${safe(state.dashboard.efficiency, 0)}%`;
-  byId("metricHighPriority").textContent = safe(state.dashboard.highPriorityCount, 0);
+  animateMetric("metricTotalTasks", metricCache.totalTasks, safe(state.dashboard.totalTasks, 0));
+  animateMetric("metricCompleted", metricCache.completedTasks, safe(state.dashboard.completedTasks, 0));
+  animateMetric("metricVolunteers", metricCache.volunteersCount, safe(state.dashboard.volunteersCount, 0));
+  animateMetric("metricEfficiency", metricCache.efficiency, safe(state.dashboard.efficiency, 0), "%");
+  animateMetric("metricHighPriority", metricCache.highPriorityCount, safe(state.dashboard.highPriorityCount, 0));
+
+  metricCache.totalTasks = safe(state.dashboard.totalTasks, 0);
+  metricCache.completedTasks = safe(state.dashboard.completedTasks, 0);
+  metricCache.volunteersCount = safe(state.dashboard.volunteersCount, 0);
+  metricCache.efficiency = safe(state.dashboard.efficiency, 0);
+  metricCache.highPriorityCount = safe(state.dashboard.highPriorityCount, 0);
+}
+
+function animateMetric(elementId, fromValue, toValue, suffix = "") {
+  const element = byId(elementId);
+  if (!element) return;
+
+  const start = Number(fromValue) || 0;
+  const end = Number(toValue) || 0;
+  if (start === end) {
+    element.textContent = `${end}${suffix}`;
+    return;
+  }
+
+  const durationMs = 450;
+  const startedAt = performance.now();
+
+  const tick = (now) => {
+    const progress = Math.min(1, (now - startedAt) / durationMs);
+    const current = Math.round(start + (end - start) * progress);
+    element.textContent = `${current}${suffix}`;
+    if (progress < 1) {
+      requestAnimationFrame(tick);
+    }
+  };
+
+  requestAnimationFrame(tick);
 }
 
 function renderTaskSelect() {
@@ -351,6 +738,10 @@ function renderTasks() {
     const card = document.createElement("div");
     card.className = "glass-card task-card";
 
+    if (state.ui.highlightedTaskId && state.ui.highlightedTaskId === task.id) {
+      card.classList.add("task-card-added");
+    }
+
     const priority = String(safe(task.priority, "low")).toLowerCase();
     const status = String(safe(task.status, "pending")).toLowerCase();
   const taskIndex = state.tasks.findIndex((entry) => entry.id === task.id);
@@ -392,6 +783,13 @@ function renderTasks() {
 
     container.appendChild(card);
   });
+
+  if (state.ui.highlightedTaskId) {
+    setTimeout(() => {
+      state.ui.highlightedTaskId = null;
+      renderTasks();
+    }, 1300);
+  }
 }
 
 async function deleteTask(index) {
@@ -421,30 +819,27 @@ async function deleteTask(index) {
 
 async function deleteVolunteer(index) {
   const volunteer = state.volunteers[index];
-  if (!volunteer) {
-    return;
-  }
+  if (!volunteer) return;
 
-  const confirmed = window.confirm(`Delete volunteer \"${volunteer.name}\"?`);
-  if (!confirmed) {
-    return;
-  }
+  const confirmed = window.confirm(`Delete volunteer "${volunteer.name}"?`);
+  if (!confirmed) return;
 
   const [removed] = state.volunteers.splice(index, 1);
   renderVolunteers();
-
-  if (state.ui.editingVolunteerId === removed.id) {
-    byId("volunteerForm").reset();
-    resetVolunteerFormMode();
-  }
+  renderTasks();
 
   try {
     await request(`/volunteers/${removed.id}`, { method: "DELETE" });
+    if (state.ui.editingVolunteerId === removed.id) {
+      byId("volunteerForm").reset();
+      resetVolunteerFormMode();
+    }
     showToast("Volunteer deleted.");
     await refreshAll();
   } catch (error) {
     state.volunteers.splice(index, 0, removed);
     renderVolunteers();
+    renderTasks();
     showToast(error.message, "error");
   }
 }
@@ -519,6 +914,7 @@ function renderEmergency() {
 function triggerEmergencyPulse() {
   const overlay = byId("emergencyOverlay");
   overlay.classList.add("on");
+  document.body.classList.add("emergency-pulse");
 
   if (emergencyPulseTimeout) {
     clearTimeout(emergencyPulseTimeout);
@@ -527,6 +923,7 @@ function triggerEmergencyPulse() {
   startSiren(EMERGENCY_PULSE_MS);
   emergencyPulseTimeout = setTimeout(() => {
     overlay.classList.remove("on");
+    document.body.classList.remove("emergency-pulse");
     emergencyPulseTimeout = null;
   }, EMERGENCY_PULSE_MS);
 }
@@ -537,6 +934,7 @@ function clearEmergencyPulse() {
     emergencyPulseTimeout = null;
   }
   byId("emergencyOverlay").classList.remove("on");
+  document.body.classList.remove("emergency-pulse");
   stopSiren();
 }
 
@@ -583,6 +981,7 @@ async function addTask(event) {
     });
 
     state.tasks.unshift(task);
+    state.ui.highlightedTaskId = task.id;
     byId("taskForm").reset();
     showToast("Task created successfully.");
     await refreshAll();
@@ -658,6 +1057,12 @@ async function runAiMatching() {
   const runButton = byId("runAiBtn");
   runButton.classList.add("ai-running");
   runButton.disabled = true;
+  byId("aiResult").innerHTML = `
+    <div class="glass-card ai-result ai-loading">
+      <div class="spinner"></div>
+      <div>AI engine analyzing candidates...</div>
+    </div>
+  `;
 
   try {
     const response = await request("/match", {
@@ -682,12 +1087,18 @@ function renderAiResult(response) {
   }
 
   const topMatches = Array.isArray(response.topMatches) ? response.topMatches : [];
+  const normalizedScore = Math.max(0, Math.min(100, Math.round((Number(response.bestScore || 0) / 125) * 100)));
+  const hasNearDistance = (response.detailedReasoning || []).some((entry) =>
+    String(entry).toLowerCase().includes("same location")
+  );
+  const distanceExplanation = hasNearDistance ? "Near distance (same location)" : "Farther distance (different location)";
 
   target.innerHTML = `
     <div class="glass-card ai-result">
       <h3>Best Volunteer: ${safe(response.bestVolunteer.name, "Unknown")}</h3>
-      <div><strong>Score:</strong> ${safe(response.bestScore, 0)}</div>
+      <div><strong>Score:</strong> ${safe(response.bestScore, 0)} <span class="score-pill">${normalizedScore}/100</span></div>
       <div><strong>Detailed Reasoning:</strong> ${(response.detailedReasoning || []).join(" • ")}</div>
+      <div><strong>Distance:</strong> ${distanceExplanation}</div>
       <div class="suggestions">
         <strong>Top 3 Matches</strong>
         ${topMatches
@@ -949,7 +1360,11 @@ async function bootstrap() {
 
   try {
     await refreshAll();
-    showToast(`Connected to API: ${state.apiBase.replace("/api", "")}`);
+    if (state.offlineMode) {
+      showToast("Backend unreachable. Running in offline mode with local storage.", "error");
+    } else {
+      showToast(`Connected to API: ${state.apiBase.replace("/api", "")}`);
+    }
   } catch (error) {
     showToast(`Startup error: ${error.message}`, "error");
   }

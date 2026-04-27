@@ -1,105 +1,166 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Smart Emergency Volunteer System</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Emergency Volunteer Coordination System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="introScreen" class="intro-screen">
+      <div class="intro-card">
+        <div class="intro-badge">Emergency AI Suite</div>
+        <h1>Smart Emergency Volunteer Coordination System</h1>
+        <p>Coordinating life-saving responses with intelligent matching and real-time command control.</p>
+        <button id="enterAppBtn">Enter Mission Control</button>
+      </div>
+    </div>
 
-  <!-- CSS -->
-  <link rel="stylesheet" href="styles.css">
+    <div id="characterLayer" aria-hidden="true"></div>
+    <canvas id="particles"></canvas>
+    <div id="emergencyOverlay"></div>
+    <div id="emergencyBanner" class="emergency-banner">🚨 EMERGENCY MODE ACTIVE — HIGH PRIORITY TASKS BOOSTED</div>
 
-  <!-- Google Font -->
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-</head>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <h1 class="brand">⚡ <span>Smart Emergency</span><br />Volunteer System</h1>
+        <div class="nav-list">
+          <button class="nav-btn active" data-target="dashboardSection">Dashboard</button>
+          <button class="nav-btn" data-target="tasksSection">Task Management</button>
+          <button class="nav-btn" data-target="volunteersSection">Volunteer Management</button>
+          <button class="nav-btn" data-target="aiSection">AI Matching Engine</button>
+          <button class="nav-btn" data-target="activitySection">Activity Log</button>
+        </div>
 
-<body>
+        <div class="side-actions">
+          <button id="toggleEmergencyBtn">Activate Emergency Mode</button>
+          <div class="small-note">Emergency status: <strong id="emergencyStatus">OFF</strong></div>
+          <div class="small-note">Theme style</div>
+          <select id="themeSelect">
+            <option value="aurora">Aurora Neon</option>
+            <option value="sunset">Sunset Pulse</option>
+            <option value="emerald">Emerald Matrix</option>
+          </select>
+          <div class="small-note">Live sync every 2.5s</div>
+        </div>
+      </aside>
 
-  <!-- ===== SIDEBAR ===== -->
-  <aside class="sidebar">
-    <h1>⚡ Smart Emergency<br>Volunteer System</h1>
+      <main class="main">
+        <div id="topBanner" class="top-banner">Emergency response mode is ON. AI boosts high-priority dispatch.</div>
 
-    <button class="nav-btn">Dashboard</button>
-    <button class="nav-btn">Task Management</button>
-    <button class="nav-btn">Volunteer Management</button>
-    <button class="nav-btn">AI Matching Engine</button>
-    <button class="nav-btn">Activity Log</button>
+        <section id="dashboardSection" class="section-panel active">
+          <div class="grid dashboard-grid">
+            <div class="glass-card">
+              <div>Total Tasks</div>
+              <div class="metric-value" id="metricTotalTasks">0</div>
+            </div>
+            <div class="glass-card">
+              <div>Completed Tasks</div>
+              <div class="metric-value" id="metricCompleted">0</div>
+            </div>
+            <div class="glass-card">
+              <div>Volunteers</div>
+              <div class="metric-value" id="metricVolunteers">0</div>
+            </div>
+            <div class="glass-card">
+              <div>Efficiency</div>
+              <div class="metric-value" id="metricEfficiency">0%</div>
+            </div>
+            <div class="glass-card">
+              <div>High Priority</div>
+              <div class="metric-value" id="metricHighPriority">0</div>
+            </div>
+          </div>
+          <div class="glass-card">
+            <h2>Mission Control</h2>
+            <p>Manage volunteers and dispatch in real-time with AI-backed coordination designed for crisis response.</p>
+          </div>
+        </section>
 
-    <br>
+        <section id="tasksSection" class="section-panel">
+          <div class="glass-card">
+            <h2>Add Task</h2>
+            <form id="taskForm" class="form-grid">
+              <input id="taskTitle" placeholder="Task title" required />
+              <input id="taskSkill" placeholder="Required skill" required />
+              <input id="taskLocation" placeholder="City (e.g. New York)" required />
+              <select id="taskPriority" required>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+              <button type="submit">Create Task</button>
+            </form>
+          </div>
 
-    <button id="toggleEmergencyBtn">🚨 Emergency</button>
-    <p>Status: <span id="emergencyStatus">OFF</span></p>
+          <div class="glass-card">
+            <h3>Task Command Tools</h3>
+            <div class="form-grid">
+              <input id="taskSearch" placeholder="Search by title / skill / city" />
+              <select id="taskFilterPriority">
+                <option value="all">All priorities</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+              <select id="taskFilterStatus">
+                <option value="all">All statuses</option>
+                <option value="pending">Pending</option>
+                <option value="assigned">Assigned</option>
+                <option value="completed">Completed</option>
+              </select>
+              <button id="bulkAutoAssignBtn" type="button">Bulk Auto-Assign Pending</button>
+              <button id="clearCompletedBtn" type="button">Clear Completed Tasks</button>
+              <button id="exportSnapshotBtn" type="button">Export System Snapshot</button>
+            </div>
+          </div>
 
-    <select id="themeSelect">
-      <option value="aurora">Aurora</option>
-      <option value="sunset">Sunset</option>
-      <option value="emerald">Emerald</option>
-    </select>
-  </aside>
+          <div id="taskList" class="list-grid"></div>
+        </section>
 
-  <!-- ===== MAIN ===== -->
-  <main class="main">
+        <section id="volunteersSection" class="section-panel">
+          <div class="glass-card">
+            <h2>Add Volunteer</h2>
+            <form id="volunteerForm" class="form-grid">
+              <input id="volName" placeholder="Volunteer name" required />
+              <input id="volSkills" placeholder="Skills (comma separated)" required />
+              <input id="volLocation" placeholder="City (e.g. Tokyo)" required />
+              <input id="volRating" placeholder="Rating 1-5" type="number" min="1" max="5" step="1" required />
+              <button type="submit">Add Volunteer</button>
+            </form>
+          </div>
+          <div id="volunteerList" class="list-grid"></div>
+        </section>
 
-    <h2>Dashboard</h2>
-    <div id="metricTotalTasks">0</div>
-    <div id="metricCompleted">0</div>
-    <div id="metricVolunteers">0</div>
-    <div id="metricEfficiency">0%</div>
+        <section id="aiSection" class="section-panel">
+          <div class="glass-card">
+            <h2>AI Matching Engine</h2>
+            <div class="row">
+              <select id="aiTaskSelect"></select>
+              <button id="runAiBtn" class="ai-run-btn">Run AI Match</button>
+            </div>
+          </div>
+          <div id="aiResult"></div>
+        </section>
 
-    <hr>
+        <section id="activitySection" class="section-panel">
+          <div class="glass-card">
+            <h2>Activity Log Panel</h2>
+            <p>Latest response actions and system-level events.</p>
+          </div>
+          <div id="activityList" class="grid"></div>
+        </section>
 
-    <!-- TASK SECTION -->
-    <h2>Add Task</h2>
-    <form id="taskForm">
-      <input id="taskTitle" placeholder="Task title" required>
-      <input id="taskSkill" placeholder="Skill" required>
-      <input id="taskLocation" placeholder="Location" required>
+        <div id="toast" class="glass-card footer-note" style="display: none"></div>
+      </main>
+    </div>
 
-      <select id="taskPriority">
-        <option value="low">Low</option>
-        <option value="medium">Medium</option>
-        <option value="high">High</option>
-      </select>
-
-      <button type="submit">Add Task</button>
-    </form>
-
-    <div id="taskList"></div>
-
-    <hr>
-
-    <!-- VOLUNTEER SECTION -->
-    <h2>Add Volunteer</h2>
-    <form id="volunteerForm">
-      <input id="volName" placeholder="Name" required>
-      <input id="volSkills" placeholder="Skills" required>
-      <input id="volLocation" placeholder="Location" required>
-      <input id="volRating" type="number" min="1" max="5" required>
-
-      <button type="submit">Add Volunteer</button>
-    </form>
-
-    <div id="volunteerList"></div>
-
-    <hr>
-
-    <!-- AI SECTION -->
-    <h2>AI Matching Engine</h2>
-    <select id="aiTaskSelect"></select>
-    <button id="runAiBtn">Run AI</button>
-    <div id="aiResult"></div>
-
-    <hr>
-
-    <!-- ACTIVITY -->
-    <h2>Activity Log</h2>
-    <div id="activityList"></div>
-
-    <div id="toast"></div>
-
-  </main>
-
-  <!-- JS (VERY IMPORTANT: must be last) -->
-  <script src="app.js"></script>
-
-</body>
+    <script src="app.js"></script>
+  </body>
 </html>
