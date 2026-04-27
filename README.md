@@ -27,6 +27,10 @@ The system selects the best volunteer using:
 
 ---
 
+## 🚀 Live Demo
+https://vaigunthan314.github.io/smart-volunteer-system/
+
+
 ## 🚀 How to Run
 
 ### Backend
