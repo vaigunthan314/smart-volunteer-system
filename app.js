@@ -2,9 +2,8 @@ const API_CANDIDATES = (() => {
   const candidates = [];
   const origin = window.location.origin;
 
-  if (origin && !origin.startsWith("file:")) {
-    candidates.push(`${origin}/api`);
-  }
+  candidates.push("https://smart-volunteer-system-final-1.onrender.com/api");
+candidates.push("http://localhost:5000/api");
 
   candidates.push("http://localhost:5001/api");
   candidates.push("http://127.0.0.1:5001/api");
@@ -85,37 +84,6 @@ function dedupeById(items) {
     }
     seen.add(key);
     result.push(item);
-  });
-
-  return result;
-}
-
-function buildVolunteerSignature(volunteer) {
-  const skills = Array.isArray(volunteer?.skills)
-    ? volunteer.skills.map((entry) => String(entry).trim().toLowerCase()).sort().join("|")
-    : "";
-
-  return [
-    String(volunteer?.name || "").trim().toLowerCase(),
-    String(volunteer?.location || "").trim().toLowerCase(),
-    skills,
-    String(volunteer?.rating ?? ""),
-    String(volunteer?.status || "").trim().toLowerCase()
-  ].join("::");
-}
-
-function dedupeVolunteers(items) {
-  const byId = dedupeById(items);
-  const seen = new Set();
-  const result = [];
-
-  byId.forEach((volunteer) => {
-    const signature = buildVolunteerSignature(volunteer);
-    if (seen.has(signature)) {
-      return;
-    }
-    seen.add(signature);
-    result.push(volunteer);
   });
 
   return result;
@@ -1007,7 +975,7 @@ async function refreshAll() {
   ]);
 
   state.tasks = dedupeById(tasks);
-  state.volunteers = dedupeVolunteers(volunteers);
+  state.volunteers = dedupeById(volunteers);
   state.dashboard = dashboard || state.dashboard;
   state.activity = Array.isArray(activity) ? activity : [];
   state.emergencyMode = Boolean(emergency.emergencyMode);
